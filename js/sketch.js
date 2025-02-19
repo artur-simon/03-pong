@@ -9,6 +9,28 @@ const SPACE_COOLDOWN = 500; // 500ms cooldown for space bar
 let paddleHitSound;
 let wallHitSound;
 let scoreSound;
+let bgMusic;
+let musicStarted = false;
+// E minor pentatonic scale frequencies
+const SCALE = {
+    E3: 164.81,
+    G3: 196.00,
+    A3: 220.00,
+    B3: 246.94,
+    D4: 293.66,
+    E4: 329.63,
+    G4: 392.00,
+    A4: 440.00,
+    B4: 493.88
+};
+// Convert object to array for easy access
+const NOTES = Object.values(SCALE);
+let melodyPattern = [];
+let currentNote = 0;
+let lastNoteTime = 0;
+const NOTE_DURATION = 150;
+const NOTE_INTERVAL = 200;
+let patternLength = 16; // Length of generated pattern
 
 function setup() {
     const canvas = createCanvas(CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
@@ -37,6 +59,10 @@ function preload() {
     paddleHitSound = new p5.Oscillator('square');
     wallHitSound = new p5.Oscillator('square');
     scoreSound = new p5.Oscillator('square');
+    bgMusic = {
+        melody: new p5.Oscillator('triangle'),
+        bass: new p5.Oscillator('sine')
+    };
     
     // Set initial frequencies for different sounds
     paddleHitSound.freq(400);
@@ -63,6 +89,7 @@ function draw() {
             drawPaddles();
             drawBall();
             updateScoreDisplay();
+            updateBackgroundMusic();
             checkWinCondition();
             break;
             
@@ -201,4 +228,98 @@ function displayGameOver() {
     textSize(32);
     text(`${winner} wins!\nPress SPACE to restart`, 
          CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2);
+}
+
+function generateMelodyPattern() {
+    let pattern = [];
+    let baseNote = 4; // Start with E4
+    
+    for (let i = 0; i < patternLength; i++) {
+        if (i % 8 === 0) {
+            // Start of phrase, return to base note
+            pattern.push(NOTES[baseNote]);
+        } else if (i % 4 === 0) {
+            // Every 4th note, play something from middle register
+            pattern.push(NOTES[baseNote + (Math.random() > 0.5 ? 1 : -1)]);
+        } else if (i % 2 === 0) {
+            // Every 2nd note, wider range of notes
+            let range = Math.floor(Math.random() * 5) - 2; // -2 to +2
+            pattern.push(NOTES[Math.max(0, Math.min(NOTES.length - 1, baseNote + range))]);
+        } else {
+            // Other notes, even wider range but weighted towards center
+            let range = Math.floor(Math.random() * 7) - 3; // -3 to +3
+            if (Math.random() > 0.7) { // 30% chance of bigger jump
+                range = range * 2;
+            }
+            pattern.push(NOTES[Math.max(0, Math.min(NOTES.length - 1, baseNote + range))]);
+        }
+    }
+    return pattern;
+}
+
+function generateBassPattern(melodyPattern) {
+    let pattern = [];
+    // Bass follows a simpler pattern using lower octave notes
+    for (let i = 0; i < melodyPattern.length; i++) {
+        if (i % 8 === 0) {
+            pattern.push(SCALE.E3);
+        } else if (i % 8 === 4) {
+            pattern.push(SCALE.A3);
+        } else if (i % 4 === 2) {
+            pattern.push(SCALE.G3);
+        } else {
+            pattern.push(0); // Rest
+        }
+    }
+    return pattern;
+}
+
+function updateBackgroundMusic() {
+    if (gameState === 'PLAYING') {
+        let currentTime = millis();
+        
+        // Start music if not started
+        if (!musicStarted) {
+            bgMusic.melody.start();
+            bgMusic.bass.start();
+            bgMusic.melody.amp(0.1);
+            bgMusic.bass.amp(0.05);
+            musicStarted = true;
+            melodyPattern = generateMelodyPattern();
+            bassPattern = generateBassPattern(melodyPattern);
+        }
+        
+        // Update notes
+        if (currentTime - lastNoteTime >= NOTE_INTERVAL) {
+            // Update melody with smooth transitions
+            bgMusic.melody.freq(melodyPattern[currentNote], 0.1);
+            bgMusic.melody.amp(0.1, 0.05);
+            setTimeout(() => bgMusic.melody.amp(0.02, 0.1), NOTE_DURATION * 0.8);
+            
+            // Update bass if there's a note (not a rest)
+            if (bassPattern[currentNote] > 0) {
+                bgMusic.bass.freq(bassPattern[currentNote], 0.1);
+                bgMusic.bass.amp(0.05, 0.05);
+                setTimeout(() => bgMusic.bass.amp(0.01, 0.1), NOTE_DURATION * 0.8);
+            }
+            
+            currentNote = (currentNote + 1) % patternLength;
+            
+            // Generate new patterns when current one ends
+            if (currentNote === 0) {
+                melodyPattern = generateMelodyPattern();
+                bassPattern = generateBassPattern(melodyPattern);
+            }
+            
+            lastNoteTime = currentTime;
+        }
+    } else if (musicStarted) {
+        bgMusic.melody.amp(0, 0.1);
+        bgMusic.bass.amp(0, 0.1);
+        setTimeout(() => {
+            bgMusic.melody.stop();
+            bgMusic.bass.stop();
+            musicStarted = false;
+        }, 100);
+    }
 }
